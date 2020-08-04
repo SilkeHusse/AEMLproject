@@ -3,7 +3,7 @@ import requests
 import pickle
 import gzip
 
-# MNIST data setup
+### MNIST data setup ###
 
 DATA_PATH = Path("data")
 PATH = DATA_PATH / "mnist"
