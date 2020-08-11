@@ -2,6 +2,7 @@ from random import randrange as rand
 import random
 import pygame, sys
 import numpy as np
+import math
 #from itertools import chain
 
 ### CONFIGURATIONS ###
@@ -19,7 +20,7 @@ colors = [  (0, 0, 0), # color for background
             (0, 255, 255),
             (128, 0, 128),
             (255, 165, 0),
-            (0, 0, 0) ] # helper color for background (grid)
+            (0, 0, 10) ] # helper color for background (grid)
 
 tetris_shapes = [
     [[1, 1, 1],
@@ -85,7 +86,7 @@ def new_board():
     board += [[ 1 for x in range(cols)]] # usefulness is unclear, but necessary
     return board
 
-def get_state_t(board, tetrimonio, rot):
+def get_state_t(board, tetrimonio, rot, x_pos):
     board = np.array(board)
     current_state = [0] * len(board[0])
     for i in range(len(board[0])):
@@ -96,9 +97,31 @@ def get_state_t(board, tetrimonio, rot):
             if col[idx] != 0:
                 max_item = idx + 1
         current_state[i] = max_item
+
+    height = sum(current_state)
+
+    max_height = max(current_state)
+    diff_heights_max = [max_height-current_state[i] for i in range(len(current_state))]
+    tower = sum(diff_heights_max)
+
+    holes = 0
+    for i in range(len(board[0])):
+        col = board[:-1, i]
+        col = col[::-1]
+        for y in range(current_state[i]):
+            if col[y] == 0:
+                holes += 1
+
+    bumpiness = 0
+    for l in range(len(current_state)-1):
+        bumpiness += math.fabs(current_state[l]-current_state[l+1])
+
+    x_pos = x_pos / 9
+    min_height = min(current_state)
+    current_state = [x - min_height for x in current_state]
     current_state = [x / 20 for x in current_state]
-    current_state = current_state + tetrimonio + rot
-    return current_state
+    current_state = current_state + [min_height/20] + tetrimonio + rot + [x_pos]
+    return current_state, height, holes, bumpiness, tower
 
 class TetrisApp(object):
 
@@ -120,7 +143,6 @@ class TetrisApp(object):
         self.tetrimonio[self.tetrimonio_idx] = 1
         self.rotation = [1,0,0,0]
         self.init_game()
-        self.state = get_state_t(self.board, self.tetrimonio, self.rotation)
 
     def new_stone(self):
         self.stone = self.next_stone[:]
@@ -138,9 +160,12 @@ class TetrisApp(object):
         self.board = new_board()
         self.new_stone()
         #self.level = 1 #### TO DO
-        self.score = 0 #### To Do
+        self.score = 0 # for normal NN reward function
         self.score_old = 0
-        self.lines = 0 #### TO DO
+        self.lines = 0
+        self.reward = 0 # for GA fitness function
+        #self.reward_old = 0
+        self.state, self.height, self.holes, self.bumpiness, self.tower = get_state_t(self.board, self.tetrimonio, self.rotation, self.stone_x)
 
     def disp_msg(self, msg, topleft):
         x, y = topleft
@@ -167,6 +192,7 @@ class TetrisApp(object):
     def add_cl_lines(self, n):
         linescores = [0, 1, 4, 9, 16]
         self.lines += n
+        self.score_old = self.score
         self.score += linescores[n] #* self.level #### TO DO
         #if self.lines >= self.level*6:
         #    self.level += 1
@@ -181,7 +207,7 @@ class TetrisApp(object):
             if not check_collision(self.board, self.stone, (new_x, self.stone_y)):
                 self.stone_x = new_x
             else:
-                self.move_penalty = 0.1
+                self.move_penalty = 0.01
 
     def quit(self):
         sys.exit()
@@ -249,7 +275,7 @@ class TetrisApp(object):
                 self.stone = new_stone
                 self.rotation = self.rotation_help
             else:
-                self.rot_penalty = 0.1
+                self.rot_penalty = 0.01
 
     def toggle_pause(self):
         self.paused = not self.paused
@@ -272,20 +298,47 @@ class TetrisApp(object):
             'RETURN': self.insta_drop
         }
 
+        self.screen.fill(colors[0])
+        #pygame.draw.line(self.screen, (255, 255, 255), (self.rlim + 1, 0), (self.rlim + 1, self.height - 1))
+        #self.disp_msg("Next:", (self.rlim + cell_size, 2))
+        #self.disp_msg("Score: %d\n\n#Lines: %d" % (self.score, self.lines),
+        #              (self.rlim + cell_size, cell_size * 5))
+        #self.draw_matrix(self.bground_grid, (0, 0))
+        self.draw_matrix(self.board, (0, 0))
+        self.draw_matrix(self.stone, (self.stone_x, self.stone_y))
+        #self.draw_matrix(self.next_stone, (cols + 1, 2))
+
+        pygame.display.update()
+
         self.gameover = False
         self.move_penalty = 0
         self.rot_penalty = 0
+        height = self.height
+        holes = self.holes
+        bumpiness = self.bumpiness
+        tower = self.tower
+
         key = list(key_actions)[action_number]
         key_actions[key]()
 
-        reward = self.score - self.score_old # cleared lines reward
-        if key == 5: # hard drop reward
-            reward += 0.1
-        elif self.gameover: # game over penalty
-            reward -= 0.1
-        reward = reward - self.move_penalty - self.rot_penalty # collision penalty
+        self.state, self.height, self.holes, self.bumpiness, self.tower = get_state_t(self.board, self.tetrimonio, self.rotation, self.stone_x)
 
-        return reward, self.gameover
+
+        diff_height = self.height - height
+        diff_lines = self.score - self.score_old # cleared lines reward
+        diff_holes = self.holes - holes
+        diff_bumpiness = self.bumpiness - bumpiness
+        diff_tower = self.tower - tower
+
+        self.reward = -0.0085*max(diff_tower, 0) -0.001*diff_height +0.1*diff_lines -0.0035*diff_bumpiness -0.01*diff_holes
+        self.reward = self.reward - self.move_penalty*10 - self.rot_penalty*10 # collision penalty
+
+        if action_number == 5: # hard drop reward
+            self.reward += 0.1
+        if self.gameover: # game over penalty
+            self.reward -= 0.1
+
+        return self.reward, self.gameover
 
     def run(self):
         key_actions = {

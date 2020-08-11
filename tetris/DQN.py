@@ -13,7 +13,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 #import torchvision.transforms as T
 
-from tetris_q import *
+#from tetris_q import *
+from tetris.tetris_q import *
 #env = gym.make('CartPole-v0').unwrapped
 
 # set up matplotlib
@@ -64,9 +65,10 @@ class DQN(nn.Module):
         # self.relu4 = nn.ReLU(inplace=True)
         # self.fc5 = nn.Linear(512, self.number_of_actions)
 
-        self.fc1 = nn.Linear(21, 10)
-        self.fc2 = nn.Linear(10, 5)
-        self.fc3 = nn.Linear(5, 6)
+        self.fc1 = nn.Linear(23, 250)
+        self.fc2 = nn.Linear(250, 250)
+        self.fc3 = nn.Linear(250, 250)
+        self.fc4 = nn.Linear(250,6)
 
     def forward(self, x):
 
@@ -84,7 +86,9 @@ class DQN(nn.Module):
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = torch.sigmoid(self.fc3(x))
+        x = F.relu(self.fc3(x))
+        #x = torch.sigmoid(self.fc3(x))
+        x = self.fc4(x)
         return x
 
 
@@ -96,12 +100,12 @@ class DQN(nn.Module):
 #def get_cart_location(screen_width):
 #def get_screen():
 
-BATCH_SIZE = 128
-GAMMA = 0.999
+BATCH_SIZE = 32#128
+GAMMA = 0.975
 EPS_START = 0.9
 EPS_END = 0.05
-EPS_DECAY = 200
-TARGET_UPDATE = 10
+EPS_DECAY = 5000
+TARGET_UPDATE = 3#10
 
 # FROM DEEPMIND PAPER
 # self.number_of_actions = 6
@@ -120,8 +124,9 @@ target_net = DQN().float()
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
-optimizer = optim.RMSprop(policy_net.parameters())
-memory = ReplayMemory(10000)
+#optimizer = optim.RMSprop(policy_net.parameters())
+optimizer = optim.Adam(policy_net.parameters())
+memory = ReplayMemory(7500)
 
 steps_done = 0
 
@@ -209,12 +214,11 @@ def optimize_model():
 
 # main training loop
 
-num_episodes = 50
+num_episodes = 150
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     env = TetrisApp()
     state = torch.tensor(env.state, dtype=torch.float)
-    print(state.size())
     score = 0
     for t in count():
         # Select and perform an action
@@ -230,7 +234,13 @@ for i_episode in range(num_episodes):
             next_state = None
 
         # Store the transition in memory
-        memory.push(state, action, next_state, reward)
+        # + clean up of replay memory
+        if action.item() == 5: # is hard drop
+            memory.push(state, action, next_state, reward)
+        else:
+            p = random.random()
+            if p < 0.1:
+                memory.push(state, action, next_state, reward)
 
         # Move to the next state
         state = next_state
@@ -245,9 +255,12 @@ for i_episode in range(num_episodes):
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
 
+    print(steps_done)
+    print(EPS_END + (EPS_START - EPS_END) * \
+        math.exp(-1. * steps_done / EPS_DECAY))
+
 print('Complete')
-#env.render()
-#env.close()
-#plt.ioff()
-#plt.show()
+env.quit()
+plt.ioff()
+plt.show()
 
