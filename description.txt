@@ -1,0 +1,26 @@
+Description of the files contained in 'tetris':
+
+agent_		DQN structure with main training loop and testing
+tetris_		respective tetris version
+
+advanced	advanced reward function
+random		agent executing random actions (baseline)
+short		limited number of pieces per game including increment
+simple		simple reward function
+simplegame	random tetromino and random rotation, action is move left or right and hard drop
+simplestgame	BlockDrop
+whole		whole board as input state
+
+
+grouped_	same as above but implemented with grouped actions, only training
+_test_		main testing loop, including import of relevant model
+
+all		normal (full) Tetris game		-> all_drop_ .pt
+simple		JDrop					-> J_drop_ .pt
+simplest	BlockDrop				-> block_drop_ .pt
+
+(.pt files are saved models (parameters of network))
+
+
+tetris_original : taken from https://gist.github.com/silvasur/565419
+DQN implementation : taken from https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
